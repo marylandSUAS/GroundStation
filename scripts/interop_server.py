@@ -34,7 +34,7 @@ class interop_ros:
 
 
 
-        rospy.Subscriber("/auto/gate_detection_gate", Image,self.callback, 'Image')
+        rospy.Subscriber("/auto/gate_detection_gate", Image,self.callback)
         rospy.Subscriber("/bebop/image_raw", Image,self.callback, 'Image')
         rospy.Subscriber("/auto/wp_look", WP_Msg, self.callback,'wp_look')
         rospy.Subscriber("/auto/state_auto", Int32, self.callback,'state')
@@ -46,7 +46,7 @@ class interop_ros:
 
 
 
-    def callback(self,data,args):
+    def callback(self,data):
         # rospy.loginfo(rospy.get_caller_id() + "\nI heard %s", data)
          elif args == "state":
             if data.data != self.state_level:
@@ -74,7 +74,23 @@ class interop_ros:
             # publisher.publish(output_im)
 
        
-       
+       def submit():
+            target = interop.Odlc(type='standard',
+            latitude=lat,
+            longitude=lon,
+            orientation=direction,
+            shape=shape,
+            background_color=shape_color,
+            alphanumeric=alpha,
+            alphanumeric_color=alpha_color)
+            target = client.post_odlc(target)
+            submit_image_pointer = open(cropped['path'], 'rb')
+            submit_image = submit_image_pointer.read()
+            client.put_odlc_image(target.id,submit_image)
+            print('SUBMITTED '+image['name'])
+
+
+        
 def main():
     signal.signal(signal.SIGINT, signal_handler)
 

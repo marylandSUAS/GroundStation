@@ -1,20 +1,25 @@
 #!/usr/bin/env python
 
-import argparse
 import cv2
 import sys
 import pynput
+from pynput.keyboard import Key, Listener
 import os
 import time
 import imutils
-from pynput.keyboard import Key, Listener
 import numpy as np
-import interop
+
 import re
+
+import rospy
+from std_msgs.msg import Empty, Int32, Float32
+from sensor_msgs.msg import Image, CameraInfo
+
 
 CROP_WIDTH = 400 # half width
 CROP_HEIGHT = 400 # half heigth
 SCALE = 2 # by how much to blow up cropped image
+
 PPM = 1 # PIXELS PER METER
 F = 1 # Focal length
 M_TO_LAT = 1 # Meters to lon
@@ -276,20 +281,7 @@ def find_position():
 
 				return 0,0,direction
 
-def submit():
-	target = interop.Odlc(type='standard',
-		latitude=lat,
-		longitude=lon,
-		orientation=direction,
-		shape=shape,
-		background_color=shape_color,
-		alphanumeric=alpha,
-		alphanumeric_color=alpha_color)
-	target = client.post_odlc(target)
-	submit_image_pointer = open(cropped['path'], 'rb')
-	submit_image = submit_image_pointer.read()
-	client.put_odlc_image(target.id,submit_image)
-	print('SUBMITTED '+image['name'])
+
 
 
 def kill():
@@ -297,22 +289,13 @@ def kill():
 	cv2.destroyAllWindows()
 	sys.exit()
 
-client = interop.Client(url='http://10.10.130.10:80',username='maryland',password='6148858800')
-cv2.namedWindow("image")
-popupwindow = cv2.namedWindow("Classification")
-direction_lookup = {0:'n',1:'ne',2:'e',3:'se',4:'s',5:'sw',6:'w',7:'nw'}
-while True:
-	file_list = os.listdir('.')
-	image_list = []
-	# print(file_list)
-	for item in file_list:
-		if item.endswith(".jpg"):
-			image_list.append(item)
-	if len(image_list) > 0:
-		insert()
-	if len(image_queue) == 0:
-		kill()
-	image = dequeue() # Src img dict
+
+
+
+def callback(data)
+	img = bridge.imgmsg_to_cv2(data.image.data, desired_encoding=data.image.encoding)
+	    
+
 	croppedImg = cv2.imread(image['path'])
 	ysize,xsize,zsize = croppedImg.shape
 	pic_loc = (0,0)
@@ -322,5 +305,68 @@ while True:
 	oriented,angle = orient() # Oriented img dict
 	shape,shape_color,alpha,alpha_color = classify() 
 	lat,lon,direction = find_position()
-	submit()
+	uav_image()
 	print("")
+
+	
+	output_im = bridge.cv2_to_imgmsg(img, encoding="8UC1")
+	
+    submit_pub.publish(output_im)
+
+# cv2.namedWindow("image")
+# popupwindow = cv2.namedWindow("Classification")
+
+direction_lookup = {0:'n',1:'ne',2:'e',3:'se',4:'s',5:'sw',6:'w',7:'nw'}
+
+
+
+def main():
+
+	computer_num = 1
+	node_name = 'reciever_node'+str(computer_num)
+	pub_name = '/ask_'+str(computer_num)
+	sub_name = '/image_ask_'+str(computer_num)
+
+	rospy.init_node(node_name, anonymous=True)
+
+    rospy.Subscriber(sub_name, Image, callback)
+    asking_pub = rospy.Publisher(pub_name, Empty, queue_size=1)
+    submit_pub = rospy.Publisher('/interop_submission', uav_image, queue_size=1)
+    
+    bridge = CvBridge()
+
+	global image_recieved
+	image_recieved = False    
+
+    while True:
+    	key = cv2.waitKey(0)
+    	if key == 'space':
+    		msg = Empty()
+    		asking_pub.publish(msg)
+
+    		image_recieved = False
+    		time.sleep(5)
+    		if image_recieved == True:
+    			while True:
+    				if image_recieved == False:
+    					break
+    					time.sleep(.5)
+
+
+    		
+
+
+
+
+    	elif key == 'q':
+    		break
+
+
+
+
+
+
+
+
+if __name__ == '__main__':
+    main()
