@@ -6,3 +6,4 @@ String shape
 String background_color
 String alpha
 String alpha_color
+String type

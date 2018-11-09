@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
 import rospy
-from std_msgs.msg import Empty, Int32, Float32
+from std_msgs.msg import Empty, Int32, Float32, Point
 from sensor_msgs.msg import Image, CameraInfo
+# from imaging_msgs.msg import uav_image_Msg
 
 import cv2
 from cv_bridge import CvBridge
@@ -30,16 +31,25 @@ def callback(data,args):
     
     img = cv2.imread('Sent/'+image,1)
 
-    output_im = bridge.cv2_to_imgmsg(img, encoding="8UC1")
-    
+    outpt = uav_image_Msg()
+    outpt.image = bridge.cv2_to_imgmsg(img, encoding="8UC1")
+
+    with open('Images/'+image.split('.')[0]+'.txt','r') as writer:
+        outpt.pos.x = float(writer.readline())
+        outpt.pos.x = float(writer.readline())
+        outpt.pos.x = float(writer.readline())
+        outpt.hdg = float(writer.readline())
+        
+
+
     if args == 1:
-        ask_pub_1.publish(output_im)
+        ask_pub_1.publish(outpt)
     elif args == 2:
-        ask_pub_2.publish(output_im)
+        ask_pub_2.publish(outpt)
     elif args == 3:
-        ask_pub_3.publish(output_im)
+        ask_pub_3.publish(outpt)
     elif args == 4:
-        ask_pub_4.publish(output_im)
+        ask_pub_4.publish(outpt)
             
 
        

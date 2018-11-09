@@ -2,11 +2,12 @@
 
 import interop
 import rospy
-from geometry_msgs.msg import Twist, Pose, PoseStamped, PointStamped, Point
-from std_msgs.msg import Empty, Int32, Float32
+from geometry_msgs.msg import Point 
+from std_msgs.msg import Empty, Float32
 from sensor_msgs.msg import Image, CameraInfo
 
-from visualization_msgs.msg import Marker, MarkerArray
+# needs to be fixed
+from imaging_msgs.msg import uav_image
 
 
 import cv2
@@ -22,72 +23,31 @@ import tf
 def signal_handler(signal, frame):
     sys.exit(0)
 
-class interop_ros:
-    def __init__(self):        
+        
+# callback is called everytime something is posted to the ROS '/interop_submission' topic
+def callback(self,data):
+    
+    # this converts the image in the message to an opencv file
+    rgb = bridge.imgmsg_to_cv2(data, desired_encoding=data.encoding)
+   
+    #creates a target object for the judges server
+    target = interop.Odlc(type=data.type,
+    latitude=float(data.pos.y),
+    longitude=float(data.pos.x),
+    orientation=data.hdg,
+    shape=shape,
+    background_color=shape_color,
+    alphanumeric=alpha,
+    alphanumeric_color=alpha_color)
 
-        self.mission_pub = rospy.Publisher("/auto/rviz/vehicle", MarkerArray, queue_size=1)
+    # posts the target to the server
+    target = client.post_odlc(target)
+    #submit_image_pointer = open(cropped['path'], 'rb')
+    #submit_image = submit_image_pointer.read()
 
-        self.bridge = CvBridge()
-
-        # static_transform_publisher x y z qx qy qz qw frame_id child_frame_id  period_in_ms
-        self.tbr = tf.TransformBroadcaster()
-
-
-
-        rospy.Subscriber("/auto/gate_detection_gate", Image,self.callback)
-        rospy.Subscriber("/bebop/image_raw", Image,self.callback, 'Image')
-        rospy.Subscriber("/auto/wp_look", WP_Msg, self.callback,'wp_look')
-        rospy.Subscriber("/auto/state_auto", Int32, self.callback,'state')
-        rospy.Subscriber("/auto/state_auto", Float32, self.callback,'state')
-
-
-
-
-
-
-
-    def callback(self,data):
-        # rospy.loginfo(rospy.get_caller_id() + "\nI heard %s", data)
-         elif args == "state":
-            if data.data != self.state_level:
-                self.gate_number = self.gate_number+1
-                # self.state_level = self.state_level+10
-
-        elif args == "battery":
-
-            # print ' '
-            # print 'Battery level: ',data.percent
-            # print ' '
-            self.battery_level = data.percent
-        elif args == "wifi":
-            if data.rssi * 2 + 160 < 100.0:
-                print 'R: ',(data.rssi * 2 + 160),'  B: ',self.battery_level
-            else:
-                print 'R: ',(data.rssi * 2 + 160),' B: ',self.battery_level
-       
-        elif args == 'Image':
-            
-            rgb = bridge.imgmsg_to_cv2(data, desired_encoding=data.encoding)
-
-  
-            # output_im = self.bridge.cv2_to_imgmsg(mask, encoding="8UC1")
-            # publisher.publish(output_im)
-
-       
-       def submit():
-            target = interop.Odlc(type='standard',
-            latitude=lat,
-            longitude=lon,
-            orientation=direction,
-            shape=shape,
-            background_color=shape_color,
-            alphanumeric=alpha,
-            alphanumeric_color=alpha_color)
-            target = client.post_odlc(target)
-            submit_image_pointer = open(cropped['path'], 'rb')
-            submit_image = submit_image_pointer.read()
-            client.put_odlc_image(target.id,submit_image)
-            print('SUBMITTED '+image['name'])
+    # matches the submitted target with the corresponding image
+    client.put_odlc_image(target.id, rgb)
+    print('SUBMITTED '+data.shape_color+' '+data.shape+' '+data.alpha)
 
 
         
@@ -102,20 +62,20 @@ def main():
 
     # youareL = 'http://10.10.130.10:80'
     youareL = 'http://192.168.1.2:8000'
-    path = 'Confirmed/'
 
+    # creates maryland's interop client 
     client = interop.Client(url=youareL, username=usern, password=passw)
     print('connected to client')
 
+    # object to convert images from messages to opencv
+    bridge = CvBridge()
 
 
-
+    # initialize the node and subscriber within the ros system
     rospy.init_node('interop_ros', anonymous=True)
-
+    rospy.Subscriber('/interop_submission', uav_image,self.callback)
     
-    
-    interop_ros()
-
+    # just keeps the program from exiting
     rospy.spin() 
 
 if __name__ == '__main__':
