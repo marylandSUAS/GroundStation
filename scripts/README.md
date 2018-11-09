@@ -3,11 +3,11 @@
 
 # interop_server.py
  - Runs communicates between the interop server and the ground processes
-being worked on
+needs testing
 
-# done
-image_reciever.py
-recieves images from plane and saves them to location
+# image_reciever.py
+ - recieves images from plane and saves them to location
+Needs to include GPS and hdg data from plane
 
 # image_reset.py
  - all images in current working space are moved to storage area and submission pictures are deleted
@@ -19,7 +19,7 @@ needs rework
 
 # image_distribution.py
  - reads images from files and distributes to files that request to process 
-needs to grab the additional data from
+needs to grab the additional GPS/hdg data and distribute it
 
 
 ALL NEED TESTING
@@ -32,3 +32,4 @@ String shape
 String background_color
 String alpha
 String alpha_color
+String type
