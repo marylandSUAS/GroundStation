@@ -27,7 +27,6 @@ def image_sender():
 	rospy.init_node('image_sender', anonymous=True)	
 	bridge = CvBridge()
 	img = cv2.imread('/home/imaging/catkin_ws/src/imaging_downlink/scripts/trees.jpeg', 1)
-	cv2.imwrite('/home/imaging/catkin_ws/src/imaging_downlink/scripts/gottem.jpeg', img)
 	output_im = bridge.cv2_to_imgmsg(img, encoding="bgr8")	
 
 	pois = Point(1,2,3)
