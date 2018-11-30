@@ -20,6 +20,7 @@ def sigterm_handler(signal, frame):
     print('booyah! bye bye')
     sys.exit(1)
 
+
 signal.signal(signal.SIGINT, sigterm_handler)
 
 
@@ -27,7 +28,7 @@ signal.signal(signal.SIGINT, sigterm_handler)
 
 class image_sender:
 
-
+	#self always goes first
 	def confirm(self, Empty):
 		print('confirmed')
 		self.booley = True
@@ -38,12 +39,6 @@ class image_sender:
 	
 
 	def image_sender_method(self):
-
-	
-	
-
-
-
 		while True:
 			time.sleep(.05)	
 			file_list = os.listdir("/home/imaging/PlanePics")		
