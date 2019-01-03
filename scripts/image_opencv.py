@@ -1,98 +1,22 @@
 #!/usr/bin/env python
 
-import cv2
-import sys
-import pynput
-from pynput.keyboard import Key, Listener
-import os
 import time
+import os
+import cv2
 import imutils
 import numpy as np
-
-import re
 
 import rospy
 from std_msgs.msg import Empty, Int32, Float32
 from sensor_msgs.msg import Image, CameraInfo
-
-
-CROP_WIDTH = 400 # half width
-CROP_HEIGHT = 400 # half heigth
-SCALE = 2 # by how much to blow up cropped image
-
-PPM = 1 # PIXELS PER METER
-F = 1 # Focal length
-M_TO_LAT = 1 # Meters to lon
-M_TO_LON = 1 # Meters to lat
-image_queue = []
-
-def insert():
-	for item in image_list:
-		newImg = {'name':item,'time':os.path.getmtime(item),'path':"./manual_registered/"+item}
-		os.rename(item,newImg['path'])
-		image_queue.append(newImg)
-
-# Returns img dict
-def dequeue():
-	min_value = float("inf")
-	min_file = ""
-	min_img = None
-	for elem in image_queue:
-		if(elem['time']<min_value):
-			min_value = elem['time']
-			min_file = elem['name']
-			min_img = elem
-	if(min_value < float("inf")):
-		image_queue.remove(min_img)
-	# print(image_queue)
-	return min_img
-
-def crop_callback(event, x, y, flags, param):
-	if event == cv2.EVENT_LBUTTONUP:
-		global croppedImg, pic_loc, offset_x, offset_y
-		# record the ending (x, y) coordinates and indicate that
-		# the cropping operation is finished
-		# print(xsize)
-		# print(ysize)
-		# print(zsize)
-		centerPt = (x, y)
-		pic_loc = (x + offset_x, y+offset_y)
-		x1 = centerPt[0]-CROP_WIDTH
-		y1 = centerPt[1]-CROP_HEIGHT
-		x2 = centerPt[0]+CROP_WIDTH
-		y2 = centerPt[1]+CROP_HEIGHT
-		if(x1 < 0):
-			x1 = 0
-			x2 = 2*CROP_WIDTH
-		elif(x2 > xsize):
-			x1 = xsize-2*CROP_WIDTH
-			x2 = xsize
-		if(y1 < 0):
-			y1 = 0
-			y2 = 2*CROP_HEIGHT
-		elif(y2 > ysize):
-			y1 = ysize-2*CROP_HEIGHT
-			y2 = ysize
-		offset_x += x1
-		offset_y += y1
+from imaging_msgs.msg import uav_image
 
 
 
-		# # draw a rectangle around the region of interest
-		# cv2.rectangle(image, upLeft, downRight, (0, 255, 0), 2)
-		# cv2.imshow("image", image)
-
-		# Crop the image
-		croppedImg = croppedImg[y1:y2,x1:x2]
-		croppedImg = cv2.resize(croppedImg,(0,0),fx=SCALE,fy=SCALE)
-		cv2.imshow("image",croppedImg)
-
-		# Save cropped
-		cropped_path = "./manual_registered/cropped/" + image['name']
-		cv2.imwrite(cropped_path,croppedImg)
-
+	
+	
 # Returns cropped img dictleep
-def crop():
+def click_crop():
 	print("<Cropping>")
 	cv2.setMouseCallback("image",crop_callback)
 	cv2.imshow("image",cv2.imread(image['path']))
@@ -111,212 +35,267 @@ def crop():
 	cropped['path'] = cropped_path
 	return cropped
 
-# Returns image array
-def orient():
-	print("<Orienting>")
-	workingImg = cv2.imread(cropped['path'])
 
-	angle = 0
-	rotated = imutils.rotate_bound(workingImg, angle)
+
+def click_and_crop(event, x, y, flags, param):
+	# grab references to the global variables
+	global refPt, cropping
+ 
+	# if the left mouse button was clicked, record the starting
+	# (x, y) coordinates and indicate that cropping is being
+	# performed
+	if event == cv2.EVENT_LBUTTONDOWN:
+		refPt = [(x, y)]
+		cropping = True
+ 
+	# check to see if the left mouse button was released
+	elif event == cv2.EVENT_LBUTTONUP:
+		# record the ending (x, y) coordinates and indicate that
+		# the cropping operation is finished
+		refPt.append((x, y))
+		cropping = False
+ 
+		# draw a rectangle around the region of interest
+		cv2.rectangle(image, refPt[0], refPt[1], (0, 255, 0), 2)
+		cv2.imshow("image", image)
+
+
+
+
+
+def find_position(pos,heading,theta,dim,point):
+	Xfov = 53.94*pi/180;
+	Yfov = 41.85*pi/180;
+	image_shape = [4640 3480]
+
+	Xskew = 0 # meters
+	Yskew = 0 # meters
+	Rskew = 0 # degrees
+	Xdist = 1
+	Ydist = 1
+
+
+	alt = pos[2]
+	
+	rad_Earth = 20909000.0
+	dlng = (pi/180)*rad_Earth*cos(pos[0]*pi/180);
+	dlat = (pi/180)*rad_Earth
+
+	target_heading = pi+heading+theta;
+
+	pixel_offset_X = point[0]-.5*image_shape[0]
+	pixel_offset_Y = point[1]-.5*image_shape[1]
+
+	fov = [Xdist*.5*Xfov*(pixel_offset_X)/image_shape[0],
+    	Ydist*.5*Yfov*(pixel_offset_Y)/image_shape[1]]
+
+	d_pos = (alt*sin(fov[0])+Xskew,alt*sin(fov[1])+Yskew)
+	pos_rot = pi-heading + Rskew
+	
+	rotated_pos = [cos(pos_rot)*d_pos[0]+sin(pos_rot)*d_pos[1], -sin(pos_rot)*d_pos[0]+cos(pos_rot)*d_pos[1]]
+	GPS_pos = [rotated_pos[1]*dlat,rotated_pos[0]*dlng]
+	
+	finalGPS = [pos[0]+rotated_pos[0],pos[1]+rotated_pos[1]]
+	
+	return pos,target_heading
+
+
+
+def crop(img, loc, size):
+	xsize = img.shape[0]
+	ysize = img.shape[1]
+	
+	x1 = loc[0]-size/2
+	y1 = loc[1]-size/2
+	x2 = loc[0]+size/2
+	y2 = loc[1]+size/2
+	
+	if(x1 < 0):
+		x1 = 0
+		x2 = size
+	elif(x2 > xsize):
+		x1 = xsize-2*size
+		x2 = xsize
+	if(y1 < 0):
+		y1 = 0
+		y2 = 2*size
+	elif(y2 > ysize):
+		y1 = ysize-2*size
+		y2 = ysize
+
+	return img[y1:y2,x1:x2]
+
+
+def recrop(img,point,size,theta):
+	img_crop1 = crop(img,point,size*1.5)
+	img_temp = imutils.rotate(img_crop1,theta)
+	return crop(img_temp,img_temp.size/2,size)
+ 
+
+def do_image(img,GPS,hdg):
 	while True:
 		key = cv2.waitKey(0)
-		if key == 113: # q
-			angle = angle - 5
-			rotated = imutils.rotate_bound(workingImg, angle)
-		elif key == 101: # e
-			angle = angle + 5
-			rotated = imutils.rotate_bound(workingImg, angle)
-		elif key == 13: # Enter
-			oriented_path = "./manual_registered/cropped/oriented/" + image['name']
-			cv2.imwrite(oriented_path,rotated)
-			print("<Finished Orienting>")
-			break
-		cv2.imshow("image",rotated)
+		if key == 32:
+			# begin classifying
+
+			img_temp = img
+			zoom_level = 200
+			point = img.size/2	
+			while True:
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
+
+				if key == 43:
+					zoom_level = zoom_level - 5
+					img_temp = zoom(img,zoom_level,point)
+				elif key == 45:
+					zoom_level = zoom_level + 5
+					img_temp = zoom(img,zoom_level,point)
+				
+				elif chr(key) == 'w':
+					point = [point[1],point[2]+5]
+					img_temp = zoom(img,zoom_level,point)
+				elif chr(key) == 's':
+					point = [point[1],point[2]-5]
+					img_temp = zoom(img,zoom_level,point)
+				elif chr(key) == 'd':
+					point = [point[1]+5,point[2]]
+					img_temp = zoom(img,zoom_level,point)
+				elif chr(key) == 'a':
+					point = [point[1]-5,point[2]]
+					img_temp = zoom(img,zoom_level,point)
+				
+				elif key == 8:
+					img_temp = img
+				elif key == 32:
+					break
+				elif key == 27:
+					return None
+			
+
+			theta = 0
+			img_cropped = img_temp
+			while True:
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
+
+				elif chr(key) == 'd':
+					theta = theta-5
+					img_temp = imutils.rotate(img_cropped,theta)
+				elif chr(key) == 'a':
+					theta = theta+5
+					img_temp = imutils.rotate(img_cropped,theta)
+
+				elif key == 8:
+					img_temp = img_cropped
+				elif key == 32:
+					break
+				elif key == 27:
+					return None
 
 
-	# print("test3")
-	oriented_path = "./manual_registered/cropped/oriented/" + image['name']
-	oriented = cropped
-	oriented['path'] = oriented_path
-	return oriented, angle
+			target_pos,target_heading = find_position(GPS,hdg,theta,img.shape,point)
 
-def classify():
-	print("Classifying")
-	popup = np.ones([1000,800,3],dtype=np.uint8)*255
-	cv2.imshow("Classification",popup)
 
-	# char - ascii:
-	# 0 - 48, 1 - 49, ..., 9 - 57
-	# a - 97, b - 98, ..., z - 122
-	shapes = {48:'circle',49:'semicircle',50:'quarter_circle',51:'triangle',52:'square',
-	53:'rectangle',54:'trapezoid',55:'pentagon',56:'hexagon',57:'heptagon',
-	97:'octagon',98:'star',99:'cross'}
-	colors = {48:'white',49:'black',50:'gray',51:'red',52:'blue',53:'green',54:'yellow'
-	,55:'purple',56:'brown',57:'orange'}
+			img_submit = recrop(img,point,size,theta)
+			img_class = cv2.resize(img_submit,(0,0),fx=4,fy=4)
 
-	# Counter for which stat is being clasified (can be reverted with backspace key)
-	stat_counter = 0
+			shapes = {48:'circle',49:'semicircle',50:'quarter_circle',51:'triangle',52:'square',53:'rectangle',54:'trapezoid'
+									,55:'pentagon',56:'hexagon',57:'heptagon',97:'octagon',98:'star',99:'cross'}
+			colors = {48:'white',49:'black',50:'gray',51:'red',52:'blue',53:'green',54:'yellow',55:'purple',56:'brown',57:'orange'}
+							
+				
+			# CLASSIFY ALPHA
+			alpha = 'Alphanumeric'
+			while True:
+				img_temp = img_class
+				cv2.putText(img_temp, alpha, (230, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
 
-	# Default Values
-	shape_color = 'white'
-	shape = 'circle'
-	alpha_color = 'white'
-	alpha = 'a'
-	shift = False
-	while True:
-		key = cv2.waitKey(0)
-		if key == 8:
-			print("Redo " + str(stat_counter) +":")
-			stat_counter = stat_counter - 1 if stat_counter > 0 else 0
-		elif key == 13:
-			if stat_counter >= 4:
-				print("Finished Classifying")
-				break
-		else:
-			if stat_counter == 0:
-				shape_color = colors.get(key,'white')
-				stat_counter += 1
-				print(str(stat_counter) + ": " + shape_color)
-			elif stat_counter == 1:
-				shape = shapes.get(key,'circle')
-				stat_counter += 1
-				print(str(stat_counter) + ": " + shape)
-			elif stat_counter == 2:
-				alpha_color = colors.get(key,'white')
-				stat_counter += 1
-				print(str(stat_counter) + ": " + alpha_color)
-			elif stat_counter == 3:
-				if key == 226:
-					shift = True
+
+				if key == 32:
+					break
+				elif key == 27:
+					return None
 				else:
-					if shift:
-						shift = False
-						alpha = str(chr(key))
-						alpha = alpha.upper()
-						stat_counter += 1
-						print(str(stat_counter) + ": " + alpha)
-					else:
-						alpha = str(chr(key))
-						stat_counter += 1
-						print(str(stat_counter) + ": " + alpha)
+					alpha = str(chr(key)).upper()
+
+			# CLASSIFY ALPHA COLOR
+			alpha_color = 'Alpha color'
+			while True:
+				img_temp = img_class
+				cv2.putText(img_temp, alpha_color, (230, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
 
 
-	# debug_string = shape_color + " " + shape + ", " + alpha_color + " " + alpha
-	# print(debug_string)
+				if key == 32:
+					break
+				elif key == 27:
+					return None
+				else:
+					alpha_color = colors.get(key,'white')
 
-	return shape,shape_color,alpha,alpha_color
+			# CLASSIFY BACKGROUND COLOR
+			color = 'Color'
+			while True:
+				img_temp = img_class
+				cv2.putText(img_temp, color, (230, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
 
-	#Shape - circle, semicircle, quarter_circle, triangle, square, rectangle, trapezoid, pentagon
-	#	   - hexagon, heptagon, octagon, star, cross
-	#Color - white, black, gray, red, blue, green, yellow, purple, brown, orange
-	#Letter - a-z 0-9
-
-# Input in radians
-def Rz(th):
-	c, s = np.cos(th), np.sin(th)
-	r1 = (c,s,0)
-	r2 = (-s,c,0)
-	r3 = (0,0,1)
-	Rx = (r1,r2,r3)
-	return np.array(Rx)
-
-# Input in radians
-def Ry(th):
-	c, s = np.cos(th), np.sin(th)
-	r1 = (c,0,-s)
-	r2 = (0,1,0)
-	r3 = (s,0,c)
-	Ry = (r1,r2,r3)
-	return np.array(Ry)
-
-# Input in radians
-def Rx(th):
-	c, s = np.cos(th), np.sin(th)
-	r1 = (1,0,0)
-	r2 = (0,c,s)
-	r3 = (0,-s,c)
-	Rz = (r1,r2,r3)
-	return np.array(Rz)
-
-def find_position():
-	print("<Locating>")
-	lat = 0
-	lon = 0
-	direction = 'n'
-	with open('image_data.txt','r') as data:
-		for line in data.readlines():
-			# print("line: " + line)
-			# "(\d+\.\d+)"+" "+"(\d+\.\d+)"+" "+"(\d+\.\d+)"+" "+
-			img_name = image['name'][:-4]
-			# print("img: " + img_name)
-			expression = img_name+"\.jpg (-?\d+\.\d+ ?)(-?\d+\.\d+ ?)(-?\d+\.\d+ ?)(-?\d+\.\d+ ?)(-?\d+\.\d+ ?)(-?\d+\.\d+ ?)"
-			# pattern = re.compile(expression)
-			# print(pattern.match(line))
-			# print(re.findall(expression,line))
-			groups = re.match(expression,str(line))
-			# print("groups: " + str(groups))
-			if(not groups == None):
-				alt = float(groups.group(1))
-				lat = float(groups.group(2))
-				lon = float(groups.group(3))
-				yaw = float(groups.group(4))
-				pitch = float(groups.group(5))
-				roll = float(groups.group(6))
-				Ryaw, Rpitch, Rroll = Rz(np.radians(yaw)), Rx(np.radians(pitch)), Ry(np.radians(roll))
-				R = np.matmul(Ryaw,np.matmul(Rpitch,Rroll))
-				# print(R)
-				target_loc_img_plane_x = (pic_loc[0]-xsize/2)/PPM
-				target_loc_img_plane_y = (ysize/2-pic_loc[1])/PPM
-				target_loc_img_plane = np.array((target_loc_img_plane_x,target_loc_img_plane_y))
-				target_loc = np.array((target_loc_img_plane[0]*alt/F,target_loc_img_plane[1]*alt/F,-alt))
-				# print(target_loc)
-
-				rotated_loc = np.matmul(R,target_loc)
-				target_lat = rotated_loc[0]*M_TO_LAT
-				target_lon = rotated_loc[1]*M_TO_LON
-
-				direction = np.floor(((90-yaw + angle)%360 + 22.5)/45) # IN DEGREES
-				print(str(yaw)+", "+str(angle)+", "+str(direction))
-				direction = direction_lookup[direction]
-
-				return 0,0,direction
+				if key == 32:
+					break
+				elif key == 27:
+					return None
+				else:
+					color = colors.get(key,'white')
 
 
+			# CLASSIFY SHAPE
+			shape = 'Shape'
+			while True:
+				img_temp = img_class
+				cv2.putText(img_temp, shape, (230, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+				cv2.imshow('image',img_temp)
+				key = cv2.waitKey(0)
 
+				if key == 32:
+					break
+				elif key == 27:
+					return None
+				else:
+					shape = shapes.get(key,'circle')
 
-def kill():
-	print('exiting')
-	cv2.destroyAllWindows()
-	sys.exit()
-
+	return img_submit, target_pos, target_heading, alpha, alpha_color, color, shape
 
 
 
 def callback(data)
-	img = bridge.imgmsg_to_cv2(data.image.data, desired_encoding=data.image.encoding)
-	    
+	global image_recieved
+	image_recieved = True
 
-	croppedImg = cv2.imread(image['path'])
-	ysize,xsize,zsize = croppedImg.shape
-	pic_loc = (0,0)
-	offset_x = 0
-	offset_y = 0
-	cropped = crop() # Cropped img dict
-	oriented,angle = orient() # Oriented img dict
-	shape,shape_color,alpha,alpha_color = classify() 
-	lat,lon,direction = find_position()
-	uav_image()
-	print("")
 
+	imag = bridge.imgmsg_to_cv2(data.image.data, desired_encoding=data.image.encoding)
+
+	img_submit, target_pos, target_heading, alpha, alpha_color, color, shape = do_image(imag,[data.pos.x,data.pos.y,data.pos.z],data.hdg)
+
+	submit_msg = uav_image()
+	submit_msg.image = bridge.cv2_to_imgmsg(img_submit, encoding="8UC1")
 	
-	output_im = bridge.cv2_to_imgmsg(img, encoding="8UC1")
+	submit_pos = Point()
+	submit_pos.x = target_pos[0]
+	submit_pos.y = target_pos[1]
+
+	submit_msg.hdg = target_heading
+	submit_msg.type = data.type
+	submit_msg.shape = shape
+	submit_msg.background_color = color
+	submit_msg.alpha = alpha
+	submit_msg.alpha_color = alpha_color
 	
     submit_pub.publish(output_im)
-
-# cv2.namedWindow("image")
-# popupwindow = cv2.namedWindow("Classification")
-
-direction_lookup = {0:'n',1:'ne',2:'e',3:'se',4:'s',5:'sw',6:'w',7:'nw'}
 
 
 
@@ -329,7 +308,7 @@ def main():
 
 	rospy.init_node(node_name, anonymous=True)
 
-    rospy.Subscriber(sub_name, Image, callback)
+    rospy.Subscriber(sub_name, uav_image, callback)
     asking_pub = rospy.Publisher(pub_name, Empty, queue_size=1)
     submit_pub = rospy.Publisher('/interop_submission', uav_image, queue_size=1)
     
@@ -338,34 +317,23 @@ def main():
 	global image_recieved
 	image_recieved = False    
 
-    while True:
-    	key = cv2.waitKey(0)
-    	if key == 'space':
-    		msg = Empty()
-    		asking_pub.publish(msg)
+	while True:
+		key = os.input('Press enter for another image'+str(time.time()))
+		
+    	msg = Empty()
+    	asking_pub.publish(msg)
 
-    		image_recieved = False
-    		time.sleep(5)
-    		if image_recieved == True:
-    			while True:
-    				if image_recieved == False:
-    					break
+    	image_recieved = False
+    	time.sleep(5)
+    	if image_recieved == True:
+    		while True:
+    			if image_recieved == True:
     					time.sleep(.5)
+    			else:
+    				break
 
 
-    		
-
-
-
-
-    	elif key == 'q':
-    		break
-
-
-
-
-
-
+		
 
 
 if __name__ == '__main__':
