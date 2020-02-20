@@ -1,3 +1,0 @@
-GOD COMMAND
-
-curl -s http://192.168.168.1:80/ctrl/still?action={cap}
