@@ -1,7 +1,18 @@
-
+#!/usr/bin/env python
 import Tkinter
+import rospy
 from PIL import Image,ImageTk
 import ttk
+from GroundStation.msg import uav_image_Msg
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist, Pose, PoseStamped, PointStamped, Point
+from std_msgs.msg import Empty, Int32, Float32
+
+import cv2
+import numpy as np
+import time
+import sys
+from cv_bridge import CvBridge, CvBridgeError
 # import cv2
 # import random
 
@@ -27,13 +38,13 @@ class AutoScrollbar(ttk.Scrollbar):
 
 class Classify(Tkinter.Toplevel):
     ''' Classify and save ROI '''
-    def __init__(self,image):
+    def __init__(self,image,ref):
         
         # Initialize Toplevel window
         self.toplevel = Tkinter.Toplevel.__init__(self)
         self.title('Image Classifier')
         self.image = image
-        
+        self.ref = ref
         # Create labels for user entry
         Tkinter.Label(self,text="Shape Type").grid(row=0)
         Tkinter.Label(self,text="Shape Color").grid(row=1)
@@ -65,6 +76,8 @@ class Classify(Tkinter.Toplevel):
         orientation = self.orientation.get()
         filename = shape_type + '%' + shape_color +'%' + alphanumeric_type + '%' + alphanumeric_color + '%' + orientation +'.jpg'
         self.image.save(filename)
+        self.destroy()
+        self.ref.next_image()
         
 class ManualClassifierGUI(ttk.Frame):
     ''' GUI to display an image with scroll, zoom and manually classifying functionalities '''
@@ -123,6 +136,15 @@ class ManualClassifierGUI(ttk.Frame):
         self.image_frame = self.canvas.create_rectangle(0, 0, self.w, self.h, width=0)
         self.display_image()
 
+    def cont_classifier(self):
+        pass
+    def next_image(self):
+        self.image = Image.open("Picture2.jpeg")
+        self.canvas.coords(self.rect, 0, 0, 0, 0)
+        self.canvas.delete(self.image_final)
+        self.display_image()
+              
+
     def scroll_y(self, *args, **kwargs):
         ''' Scroll canvas vertically '''
         self.canvas.yview(*args, **kwargs)
@@ -150,7 +172,7 @@ class ManualClassifierGUI(ttk.Frame):
 
         # create rectangle if not yet exist
         if not self.rect:
-            self.rect = self.canvas.create_rectangle(self.x, self.y, 1, 1, outline='red')
+            self.rect = self.canvas.create_rectangle(self.x, self.y, 1, 1, outline='red')          
 
     def drag(self, event):
         ''' Drag and draw the desired bounding box '''
@@ -177,7 +199,7 @@ class ManualClassifierGUI(ttk.Frame):
         roi = self.canvas.bbox(self.rect)
         cropped_roi = self.image.crop(roi)
         # cropped_roi.save('cropped.jpg')
-        Classify(cropped_roi)
+        Classify(cropped_roi, self)
         pass  
 
     def scroll_zoom(self, event):
@@ -238,12 +260,13 @@ class ManualClassifierGUI(ttk.Frame):
             y = min(int(y_right_bottomcorner/self.image_scale),self.h)
             image_display = self.image.crop((int(x_left_topcorner/self.image_scale),int(y_left_topcorner/self.image_scale),x,y))
             convert_image = ImageTk.PhotoImage(image_display.resize((int(x_right_bottomcorner - x_left_topcorner),int(y_right_bottomcorner - y_left_topcorner))))
-            image_final = self.canvas.create_image(max(window_to_canvas[0],image_frame_bounding_box[0]), max(window_to_canvas[1],image_frame_bounding_box[1]),
+            self.image_final = self.canvas.create_image(max(window_to_canvas[0],image_frame_bounding_box[0]), max(window_to_canvas[1],image_frame_bounding_box[1]),
                                                anchor='nw', image=convert_image)
-            self.canvas.lower(image_final) 
+            
+            self.canvas.lower(self.image_final) 
             self.canvas.convert_image = convert_image 
 
-path = 'test_image.jpg' 
+path = 'trees.jpeg' 
 root = Tkinter.Tk()
 app = ManualClassifierGUI(root, path=path)
 root.mainloop()
