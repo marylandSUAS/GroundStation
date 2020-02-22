@@ -16,6 +16,9 @@ from cv_bridge import CvBridge, CvBridgeError
 # import cv2
 # import random
 
+#TODO: Fix directory situation
+#TODO: Fix implementation of multiple computers? Necessary?
+
 
 class AutoScrollbar(ttk.Scrollbar):
     ''' Hides scrollbar when not in use '''
@@ -83,10 +86,16 @@ class ManualClassifierGUI(ttk.Frame):
     ''' GUI to display an image with scroll, zoom and manually classifying functionalities '''
     def __init__(self, window, path):
         
+        # ROS Initialization and queue
+        rospy.init_node('gui_listener1')
+        rospy.Subscriber("Images", uav_image_Msg, self.add_image)
+        self.queue = []
+        self.count = 0
+
         # Initialize main frame
         ttk.Frame.__init__(self, master=window)
         self.master.title('Manual Classifier')
-        
+
         # Create vertical and horizontal scrollbars for canvas
         vertical_bar = AutoScrollbar(self.master, orient='vertical')
         horizontal_bar = AutoScrollbar(self.master, orient='horizontal')
@@ -135,10 +144,18 @@ class ManualClassifierGUI(ttk.Frame):
         # Place the image in frame
         self.image_frame = self.canvas.create_rectangle(0, 0, self.w, self.h, width=0)
         self.display_image()
-
-    def cont_classifier(self):
-        pass
+        #rospy.spin()
+    #Receives an image message. Saves image to folder. Adds filepath to a queue. An alternative implementation if this proves to be too slow is to add the images to memory but that is asking for trouble in my opinon.
+    def add_image(self, uim):
+        filepath = '/home/imaging/GroundPics/Picture' + str(self.count) +'.jpg'
+        cv2.imwrite(filepath,  cv_image)
+        self.queue.append(filepath)
+        self.count = self.count+1
+        
+    
+    #Called whenever a user finishes processing an image. Uses next image.
     def next_image(self):
+        next_im_path = self.queue.pop(0)
         self.image = Image.open("Picture2.jpeg")
         self.canvas.coords(self.rect, 0, 0, 0, 0)
         self.canvas.delete(self.image_final)
